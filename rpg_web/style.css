@@ -1,0 +1,16 @@
+body {
+  margin: 0;
+  background: #111;
+  color: white;
+  font-family: sans-serif;
+}
+
+#field {
+  position: relative;
+  width: 900px;
+  height: 500px;
+  margin: auto;
+  background: #222;
+  border: 2px solid #555;
+  overflow: hidden;
+}

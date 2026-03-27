@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>TD Core v10</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      #rangeCircle {
+        position: absolute;
+        width: 240px;
+        height: 240px;
+        border-radius: 50%;
+        background: rgba(0, 255, 255, 0.15);
+        pointer-events: none;
+        display: none;
+      }
+
+      .unit {
+        position: absolute;
+        width: 64px;
+        height: 64px;
+        background-size: cover;
+        background-position: center;
+      }
+
+      /* ===== HPバー（2層） ===== */
+      .hpbar {
+        position: absolute;
+        height: 6px;
+        background: black; /* 最大HP */
+        top: -10px;
+      }
+
+      .hpfill {
+        height: 100%;
+        background: lime; /* 現在HP */
+      }
+
+      /* UI */
+      #unitBar {
+        width: 900px;
+        margin: auto;
+        display: flex;
+        background: #000;
+      }
+
+      .card {
+        width: 80px;
+        height: 80px;
+        margin: 10px;
+        background: #444;
+        border: 2px solid #888;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        background-size: cover;
+      }
+
+      .selected {
+        border: 2px solid yellow;
+      }
+      .cooldown {
+        opacity: 0.3;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="field">
+      <div id="rangeCircle"></div>
+    </div>
+
+    <div id="unitBar"></div>
+
+    <script>
+      const field = document.getElementById("field");
+      const rangeCircle = document.getElementById("rangeCircle");
+      const unitBar = document.getElementById("unitBar");
+
+      let units = [];
+      let selectedCard = null;
+      const keys = {};
+
+      const UNIT_SIZE = 64;
+
+      // ===== HPバー幅定義 =====
+      function getHpBarWidth(type, isCommander) {
+        if (isCommander) return 64;
+        if (type === "fighter") return 64;
+        if (type === "archer") return 48;
+        if (type === "healer") return 36;
+        return 64;
+      }
+
+      // ===== 画像定義 =====
+      const images = {
+        player: "player.png",
+        enemyCommander: "enemy_leader.png",
+        A: "attacker.png",
+        B: "gannnaA.png",
+        C: "gannnaB.png",
+        D: "healer.png",
+        enemy: "enemy_attacker.png",
+      };
+
+      // ===== 手札 =====
+      const playerDeck = [
+        { id: "A", type: "fighter", cd: 0, active: false },
+        { id: "B", type: "archer", cd: 0, active: false },
+        { id: "C", type: "archer", cd: 0, active: false },
+        { id: "D", type: "healer", cd: 0, active: false },
+      ];
+
+      const enemyDeck = [
+        { id: "E-A", type: "fighter", cd: 0, active: false },
+        { id: "E-B", type: "fighter", cd: 0, active: false },
+      ];
+
+      // ===== UI =====
+      playerDeck.forEach((card) => {
+        const el = document.createElement("div");
+        el.className = "card";
+        el.style.backgroundImage = `url(${images[card.id]})`;
+        unitBar.appendChild(el);
+
+        card.el = el;
+
+        el.onclick = () => {
+          if (card.cd > 0 || card.active) return;
+          playerDeck.forEach((c) => c.el.classList.remove("selected"));
+          el.classList.add("selected");
+          selectedCard = card;
+        };
+      });
+
+      // ===== ステータス =====
+      function getStats(type) {
+        if (type === "fighter")
+          return { hp: 120, maxHp: 120, speed: 0.6, range: 60, attack: 1.2, cooldownMax: 30 };
+        if (type === "archer")
+          return { hp: 70, maxHp: 70, speed: 0.5, range: 180, attack: 0.5, cooldownMax: 10 };
+        if (type === "healer")
+          return { hp: 60, maxHp: 60, speed: 0.5, range: 140, heal: 0.6, cooldownMax: 20 };
+      }
+
+      // ===== ユニット生成 =====
+      function spawnUnit(x, y, team, card, isCommander = false) {
+        const stats = isCommander
+          ? { hp: 500, maxHp: 500, speed: 1.5, range: 80, attack: 1 }
+          : getStats(card.type);
+
+        const el = document.createElement("div");
+        el.className = "unit";
+
+        if (isCommander) {
+          el.style.backgroundImage =
+            team === "player"
+              ? `url(${images.player})`
+              : `url(${images.enemyCommander})`;
+        } else {
+          if (team === "player") {
+            el.style.backgroundImage = `url(${images[card.id]})`;
+          } else {
+            el.style.backgroundImage = `url(${images.enemy})`;
+          }
+        }
+
+        field.appendChild(el);
+
+        // ===== HPバー生成（2層） =====
+        const hpbar = document.createElement("div");
+        hpbar.className = "hpbar";
+
+        const hpfill = document.createElement("div");
+        hpfill.className = "hpfill";
+
+        hpbar.appendChild(hpfill);
+        el.appendChild(hpbar);
+
+        const unit = {
+          x,
+          y,
+          team,
+          ...stats,
+          type: card.type,
+          card,
+          cooldown: 0,
+          isCommander,
+          el,
+          hpbar,
+          hpfill,
+        };
+
+        if (card) card.active = true;
+
+        units.push(unit);
+        return unit;
+      }
+
+      // ===== 初期配置 =====
+      const playerCommander = spawnUnit(100, 250, "player", { type: "fighter" }, true);
+      spawnUnit(850, 250, "enemy", { type: "fighter" }, true);
+
+      // ===== 入力 =====
+      window.addEventListener("keydown", (e) => (keys[e.key.toLowerCase()] = true));
+      window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+
+      // ===== 範囲表示 =====
+      field.onmouseenter = () => (rangeCircle.style.display = "block");
+      field.onmouseleave = () => (rangeCircle.style.display = "none");
+
+      // ===== 配置 =====
+      field.onclick = (e) => {
+        if (!selectedCard || selectedCard.cd > 0 || selectedCard.active) return;
+
+        const rect = field.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        const d = Math.hypot(x - playerCommander.x, y - playerCommander.y);
+
+        if (d < 120) {
+          spawnUnit(x, y, "player", selectedCard);
+          selectedCard.cd = 180;
+          selectedCard.el.classList.add("hidden");
+          selectedCard = null;
+        }
+      };
+
+      // ===== 敵 =====
+      setInterval(() => {
+        enemyDeck.forEach((card) => {
+          if (card.cd <= 0 && !card.active) {
+            spawnUnit(800, Math.random() * 460, "enemy", card);
+            card.cd = 180;
+          }
+        });
+      }, 2000);
+
+      // ===== メインループ =====
+      function update() {
+        if (keys["a"] || keys["arrowleft"]) playerCommander.x -= playerCommander.speed;
+        if (keys["d"] || keys["arrowright"]) playerCommander.x += playerCommander.speed;
+        if (keys["w"] || keys["arrowup"]) playerCommander.y -= playerCommander.speed;
+        if (keys["s"] || keys["arrowdown"]) playerCommander.y += playerCommander.speed;
+
+        playerCommander.x = Math.max(0, Math.min(860, playerCommander.x));
+        playerCommander.y = Math.max(0, Math.min(460, playerCommander.y));
+
+        rangeCircle.style.left = playerCommander.x - 120 + "px";
+        rangeCircle.style.top = playerCommander.y - 120 + "px";
+
+        [...playerDeck, ...enemyDeck].forEach((c) => {
+          if (c.cd > 0) c.cd--;
+          if (c.el) {
+            c.el.classList.toggle("cooldown", c.cd > 0);
+            if (!c.active) c.el.classList.remove("hidden");
+          }
+        });
+
+        units.forEach((u) => {
+          if (u.isCommander) return;
+
+          if (u.cooldown > 0) u.cooldown--;
+
+          let targets =
+            u.type === "healer"
+              ? units.filter((t) => t.team === u.team && t.hp < t.maxHp)
+              : units.filter((t) => t.team !== u.team);
+
+          let nearest = null,
+            dist = 9999;
+
+          targets.forEach((t) => {
+            const d = Math.hypot(t.x - u.x, t.y - u.y);
+            if (d < dist) {
+              dist = d;
+              nearest = t;
+            }
+          });
+
+          if (!nearest) return;
+
+          if (dist <= u.range) {
+            if (u.cooldown <= 0) {
+              if (u.type === "healer") {
+                nearest.hp = Math.min(nearest.maxHp, nearest.hp + u.heal);
+              } else {
+                nearest.hp -= u.attack;
+              }
+              u.cooldown = u.cooldownMax;
+            }
+          } else {
+            const dx = nearest.x - u.x;
+            const dy = nearest.y - u.y;
+            const len = Math.hypot(dx, dy);
+            u.x += (dx / len) * u.speed;
+            u.y += (dy / len) * u.speed;
+          }
+        });
+
+        units.forEach((u) => {
+          u.el.style.left = u.x + "px";
+          u.el.style.top = u.y + "px";
+
+          const ratio = u.hp / u.maxHp;
+          const barWidth = getHpBarWidth(u.type, u.isCommander);
+
+          u.hpbar.style.width = barWidth + "px";
+          u.hpfill.style.width = barWidth * ratio + "px";
+        });
+
+        units = units.filter((u) => {
+          if (u.hp <= 0) {
+            if (u.isCommander) {
+              alert(u.team === "player" ? "敗北" : "勝利");
+              location.reload();
+            }
+            if (u.card) {
+              u.card.active = false;
+              u.card.cd = 180;
+            }
+            u.el.remove();
+            return false;
+          }
+          return true;
+        });
+
+        requestAnimationFrame(update);
+      }
+      update();
+    </script>
+    <script src="matching_battle.js" defer></script>
+  </body>
+</html>
