@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <title>TD Core v10</title>
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="charge.css" />
+    <style>
+      /* === 追加：カード暗転＆回復ゲージ === */
+      .card {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cardOverlay {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 0%;
+        background: rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+        transition: height 0.1s linear;
+      }
+    </style>
   </head>
   <body>
     <div id="gameWrapper">
@@ -19,60 +38,49 @@
       </div>
     </div>
 
+    <script src="character-data.js"></script>
     <script src="player-movement.js"></script>
+    <script src="charge.js"></script>
     <script src="battle-ai.js"></script>
+    <script src="aura.js"></script>
     <script>
-      const field = document.getElementById("field");
-      const rangeCircle = document.getElementById("rangeCircle");
-      const unitBar = document.getElementById("unitBar");
+      // =========================
+      // DOM要素の取得
+      // =========================
+      const field = document.getElementById("field"); // ゲームフィールド全体
+      const rangeCircle = document.getElementById("rangeCircle"); // 指揮官の配置可能範囲表示
+      const unitBar = document.getElementById("unitBar"); // カードUI
 
-      const infoTitle = document.getElementById("infoTitle");
-      const infoContent = document.getElementById("infoContent");
+      const infoTitle = document.getElementById("infoTitle"); // ユニット名表示
+      const infoContent = document.getElementById("infoContent"); // ユニット説明表示
 
-      let units = [];
-      let selectedCard = null;
-      const keys = {};
+      // =========================
+      // ゲーム状態管理用変数
+      // =========================
+      let units = []; // フィールド上の全ユニット
+      let selectedCard = null; // 現在選択中のカード
+      const keys = {}; // キー入力状態管理
 
-      const UNIT_SIZE = 64;
+      const UNIT_SIZE = 64; // ユニットのサイズ（未使用だが基準値）
 
+      // =========================
+      // HPバーの幅を決める関数
+      // =========================
       function getHpBarWidth(type, isCommander) {
+        // 指揮官は常に最大サイズ
         if (isCommander) return 64;
+
+        // ユニットタイプごとに幅を変える
         if (type === "fighter") return 64;
         if (type === "archer") return 48;
         if (type === "healer") return 36;
+
         return 64;
       }
 
-      const images = {
-        player: "player.png",
-        enemyCommander: "enemy_leader.png",
-        A: "attacker.png",
-        B: "gannnaA.png",
-        C: "gannnaB.png",
-        D: "healer.png",
-        enemy: "enemy_attacker.png",
-      };
-
-      // ===== 追加：キャラデータ =====
-      const characterData = {
-        A: {
-          name: "渡辺（ファイター）",
-          desc: "自称リアリスト。だが実態は思想に寄りかかった逃避者。ネットでは無双、現実では最前線に立たされるタイプ。",
-        },
-        B: {
-          name: "Lec（アーチャー）",
-          desc: "銃器知識だけは一流。実戦経験はゼロ。強気だが弾が飛んでくると普通にビビる。",
-        },
-        C: {
-          name: "Duke（アーチャー）",
-          desc: "全てを諦めたハッカー。だが戦場ではなぜか正確無比。生きる気はないが、死ぬ気もない。",
-        },
-        D: {
-          name: "新入りたん（ヒーラー）",
-          desc: "場違いなほどの清楚枠。だがこの世界では“回復できる”という一点で最も価値が高い存在。",
-        },
-      };
-
+      // =========================
+      // プレイヤーと敵のデッキ定義
+      // =========================
       const playerDeck = [
         { id: "A", type: "fighter", cd: 0, active: false },
         { id: "B", type: "archer", cd: 0, active: false },
@@ -85,36 +93,64 @@
         { id: "E-B", type: "fighter", cd: 0, active: false },
       ];
 
-      // ===== UI =====
+      // =========================
+      // プレイヤーカードUIの生成
+      // =========================
       playerDeck.forEach((card) => {
         const el = document.createElement("div");
         el.className = "card";
+
+        // カード画像設定
         el.style.backgroundImage = `url(${images[card.id]})`;
         unitBar.appendChild(el);
 
+        // クールダウン用オーバーレイ（黒い覆い）
+        const overlay = document.createElement("div");
+        overlay.className = "cardOverlay";
+        el.appendChild(overlay);
+
+        // カードオブジェクトに参照を保存
+        card.overlay = overlay;
         card.el = el;
 
+        // =========================
+        // カードクリック処理（選択）
+        // =========================
         el.onclick = () => {
+          // クールダウン中 or すでに出撃中なら選択不可
           if (card.cd > 0 || card.active) return;
+
+          // 他カードの選択状態を解除
           playerDeck.forEach((c) => c.el.classList.remove("selected"));
+
+          // このカードを選択状態に
           el.classList.add("selected");
           selectedCard = card;
         };
 
-        // ===== 追加：ホバー表示 =====
+        // =========================
+        // マウスホバーで情報表示
+        // =========================
         el.onmouseenter = () => {
           const data = characterData[card.id];
           if (!data) return;
+
           infoTitle.textContent = data.name;
           infoContent.textContent = data.desc;
         };
 
+        // =========================
+        // マウス離脱で情報リセット
+        // =========================
         el.onmouseleave = () => {
           infoTitle.textContent = "ユニット情報";
           infoContent.textContent = "カードにカーソルを合わせると表示";
         };
       });
 
+      // =========================
+      // ユニットの基本ステータス取得
+      // =========================
       function getStats(type) {
         if (type === "fighter")
           return {
@@ -125,6 +161,7 @@
             attack: 1.2,
             cooldownMax: 30,
           };
+
         if (type === "archer")
           return {
             hp: 70,
@@ -134,6 +171,7 @@
             attack: 0.5,
             cooldownMax: 10,
           };
+
         if (type === "healer")
           return {
             hp: 60,
@@ -145,29 +183,37 @@
           };
       }
 
+      // =========================
+      // ユニット生成処理
+      // =========================
       function spawnUnit(x, y, team, card, isCommander = false) {
+        // 指揮官か通常ユニットかでステータスを分岐
         const stats = isCommander
           ? { hp: 500, maxHp: 500, speed: 1.5, range: 80, attack: 1 }
           : getStats(card.type);
 
+        // ユニットDOM生成
         const el = document.createElement("div");
         el.className = "unit";
 
+        // 見た目設定（陣営・種類で画像変更）
         if (isCommander) {
           el.style.backgroundImage =
             team === "player"
               ? `url(${images.player})`
               : `url(${images.enemyCommander})`;
         } else {
-          if (team === "player") {
-            el.style.backgroundImage = `url(${images[card.id]})`;
-          } else {
-            el.style.backgroundImage = `url(${images.enemy})`;
-          }
+          el.style.backgroundImage =
+            team === "player"
+              ? `url(${images[card.id]})`
+              : `url(${images.enemy})`;
         }
 
         field.appendChild(el);
 
+        // =========================
+        // HPバー生成
+        // =========================
         const hpbar = document.createElement("div");
         hpbar.className = "hpbar";
 
@@ -177,6 +223,9 @@
         hpbar.appendChild(hpfill);
         el.appendChild(hpbar);
 
+        // =========================
+        // ユニットオブジェクト生成
+        // =========================
         const unit = {
           x,
           y,
@@ -189,14 +238,43 @@
           el,
           hpbar,
           hpfill,
+          duoMultiplier: 1,
         };
 
-        if (card) card.active = true;
+        // チャージ系初期化
+        initCharge(unit, card, stats, el);
+
+        // 攻撃時イベント
+        unit.onAttack = function () {
+          onAttackCharge(this);
+        };
+
+        // =========================
+        // カード状態更新
+        // =========================
+        if (card) {
+          card.active = true;
+
+          // 出撃直後はカードを真っ黒に
+          if (card.overlay) {
+            card.overlay.style.height = "100%";
+          }
+        }
 
         units.push(unit);
         return unit;
       }
 
+      // =========================
+      // フィールドクリックでバフ発動
+      // =========================
+      field.addEventListener("click", (e) => {
+        activateChargeBuff(units, e);
+      });
+
+      // =========================
+      // 指揮官の初期配置
+      // =========================
       const playerCommander = spawnUnit(
         100,
         250,
@@ -206,6 +284,9 @@
       );
       spawnUnit(850, 250, "enemy", { type: "fighter" }, true);
 
+      // =========================
+      // キー入力管理
+      // =========================
       window.addEventListener(
         "keydown",
         (e) => (keys[e.key.toLowerCase()] = true),
@@ -215,26 +296,38 @@
         (e) => (keys[e.key.toLowerCase()] = false),
       );
 
+      // =========================
+      // 範囲円の表示制御
+      // =========================
       field.onmouseenter = () => (rangeCircle.style.display = "block");
       field.onmouseleave = () => (rangeCircle.style.display = "none");
 
+      // =========================
+      // フィールドクリックでユニット配置
+      // =========================
       field.onclick = (e) => {
+        // カード未選択 or 使用不可なら終了
         if (!selectedCard || selectedCard.cd > 0 || selectedCard.active) return;
 
         const rect = field.getBoundingClientRect();
+
+        // クリック座標をフィールド内座標に変換
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
+        // 指揮官からの距離を計算
         const d = Math.hypot(x - playerCommander.x, y - playerCommander.y);
 
+        // 配置可能範囲内なら生成
         if (d < 120) {
           spawnUnit(x, y, "player", selectedCard);
-          selectedCard.cd = 180;
-          selectedCard.el.classList.add("hidden");
-          selectedCard = null;
+          selectedCard = null; // 選択解除
         }
       };
 
+      // =========================
+      // 敵の自動出撃処理
+      // =========================
       setInterval(() => {
         enemyDeck.forEach((card) => {
           if (card.cd <= 0 && !card.active) {
@@ -244,59 +337,91 @@
         });
       }, 2000);
 
+      // =========================
+      // メインループ
+      // =========================
       function update() {
-        // ===== プレイヤー移動処理 =====
+        // プレイヤー移動
         updatePlayerMovement(playerCommander, keys);
 
-        // ===== 射程円の位置更新 =====
+        // 範囲円の位置更新
         rangeCircle.style.left = playerCommander.x - 120 + "px";
         rangeCircle.style.top = playerCommander.y - 120 + "px";
 
-        // ===== カードのクールダウン管理 =====
+        // =========================
+        // カードのクールダウン更新
+        // =========================
         [...playerDeck, ...enemyDeck].forEach((c) => {
           if (c.cd > 0) c.cd--;
-          if (c.el) {
-            c.el.classList.toggle("cooldown", c.cd > 0);
-            if (!c.active) c.el.classList.remove("hidden");
+
+          if (c.el && c.overlay) {
+            if (c.active) {
+              // 生存中は常に真っ黒
+              c.overlay.style.height = "100%";
+            } else if (c.cd > 0) {
+              // 死亡後CD
+              const ratio = c.cd / 180;
+              c.overlay.style.height = ratio * 100 + "%";
+            } else {
+              c.overlay.style.height = "0%";
+            }
           }
         });
 
-        // ===== バトル制御 =====
+        // AI処理
         updateBattleAI(units);
 
-        // ===== 描画更新（位置・HPバー） =====
+        // オーラ効果更新
+        updateAura(units);
+
+        // =========================
+        // 各ユニット更新
+        // =========================
         units.forEach((u) => {
+          updateCharge(u); // チャージ更新
+
+          // 位置反映
           u.el.style.left = u.x + "px";
           u.el.style.top = u.y + "px";
 
+          // HP割合計算
           const ratio = u.hp / u.maxHp;
-          const barWidth = getHpBarWidth(u.type, u.isCommander);
 
+          // HPバー更新
+          const barWidth = getHpBarWidth(u.type, u.isCommander);
           u.hpbar.style.width = barWidth + "px";
           u.hpfill.style.width = barWidth * ratio + "px";
         });
 
-        // ===== 死亡処理・ユニット削除 =====
+        // =========================
+        // 死亡処理
+        // =========================
         units = units.filter((u) => {
           if (u.hp <= 0) {
+            // 指揮官死亡 → 勝敗判定
             if (u.isCommander) {
               alert(u.team === "player" ? "敗北" : "勝利");
               location.reload();
             }
+
+            // カード再使用可能に
             if (u.card) {
               u.card.active = false;
               u.card.cd = 180;
             }
+
+            // DOM削除
             u.el.remove();
             return false;
           }
           return true;
         });
 
-        // ===== 次フレーム =====
+        // 次フレームへ
         requestAnimationFrame(update);
       }
 
+      // ループ開始
       update();
     </script>
   </body>

@@ -55,6 +55,7 @@ function updateBattleAI(units) {
           nearest.hp = Math.min(nearest.maxHp, nearest.hp + u.heal);
         } else {
           nearest.hp -= u.attack;
+          if (u.onAttack) u.onAttack();
         }
         u.cooldown = u.cooldownMax;
       }

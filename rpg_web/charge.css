@@ -1,0 +1,13 @@
+.chargebar {
+  height: 6px;
+  background: black;
+  margin-top: 2px;
+  position: relative;
+}
+.chargefill {
+  height: 100%;
+  background: cyan;
+}
+.charged {
+  box-shadow: 0 0 12px 4px gold;
+}
