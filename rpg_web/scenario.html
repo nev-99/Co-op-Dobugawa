@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>コーポ・溝川β</title>
+    <style>
+      body {
+        margin: 0;
+        background: black;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        overflow: hidden;
+        font-family: "MS Gothic", monospace;
+        color: white;
+      }
+
+      /* 選択禁止 */
+      #frame,
+      #frame * {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      img {
+        pointer-events: none;
+      }
+
+      #frame {
+        width: 640px;
+        height: 480px;
+        transform-origin: center;
+      }
+
+      #game {
+        width: 640px;
+        height: 480px;
+        position: relative;
+        background-size: cover;
+        background-position: center;
+      }
+
+      #dialogueBox {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        height: 120px;
+        background: rgba(0, 0, 0, 0.85);
+        padding: 10px;
+        box-sizing: border-box;
+        display: none;
+      }
+
+      #centerText {
+        position: absolute;
+        top: 25%;
+        left: 8%;
+        width: 84%;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 16px;
+        box-sizing: border-box;
+        display: none;
+        line-height: 1.6;
+      }
+
+      #subtitle {
+        position: absolute;
+        bottom: 6%;
+        width: 100%;
+        text-align: center;
+        font-size: 14px;
+        display: none;
+      }
+
+      #skipButton {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 6px 12px;
+        background: white;
+        color: black;
+        border: none;
+        cursor: pointer;
+        font-family: "MS Gothic", monospace;
+      }
+
+      #nextButton {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        padding: 8px 16px;
+        background: white;
+        color: black;
+        border: none;
+        cursor: pointer;
+        display: none;
+        font-family: "MS Gothic", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="frame">
+      <div id="game">
+        <div id="dialogueBox"></div>
+        <div id="centerText"></div>
+        <div id="subtitle"></div>
+        <button id="skipButton">スキップ</button>
+        <button id="nextButton">次へ</button>
+      </div>
+    </div>
+
+    <script src="scenario.js"></script>
+
+    <script>
+      const frame = document.getElementById("frame");
+      const game = document.getElementById("game");
+      const dialogueBox = document.getElementById("dialogueBox");
+      const centerText = document.getElementById("centerText");
+      const subtitle = document.getElementById("subtitle");
+      const nextButton = document.getElementById("nextButton");
+
+      let script = [];
+      let index = 0;
+
+      /* スケーリング */
+      function resize() {
+        const scaleX = window.innerWidth / 640;
+        const scaleY = window.innerHeight / 480;
+        const scale = Math.min(scaleX, scaleY);
+        frame.style.transform = `scale(${scale})`;
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      /* 表示 */
+      function showNext() {
+        if (index >= script.length) return;
+
+        nextButton.style.display = "none";
+
+        dialogueBox.style.display = "none";
+        centerText.style.display = "none";
+        subtitle.style.display = "none";
+
+        const scene = script[index];
+
+        if (scene.type === "dialogue") {
+          dialogueBox.style.display = "block";
+          dialogueBox.textContent = scene.text;
+        }
+
+        if (scene.type === "center") {
+          centerText.style.display = "block";
+          centerText.textContent = scene.text;
+
+          if (scene.isMission) {
+            nextButton.style.display = "block";
+            skipButton.style.display = "none"; // ← ここ追加
+          }
+        }
+
+        if (scene.type === "subtitle") {
+          subtitle.style.display = "block";
+          subtitle.textContent = scene.text;
+        }
+
+        index++;
+      }
+
+      /* クリック進行 */
+      document.addEventListener("click", function (e) {
+        if (nextButton.style.display === "block") return;
+        showNext();
+      });
+
+      const skipButton = document.getElementById("skipButton");
+
+      skipButton.addEventListener("click", function () {
+        // MISSIONの場所を探す
+        const missionIndex = script.findIndex((scene) => scene.isMission);
+
+        if (missionIndex !== -1) {
+          index = missionIndex; // そこまでジャンプ
+          skipButton.style.display = "none"; // ← ここ追加
+          showNext(); // 表示更新
+        }
+      });
+
+      /* ボタンで遷移 */
+      nextButton.addEventListener("click", function () {
+        window.location.href = "stage.html";
+      });
+
+      /* 起動 */
+      script = SCRIPT;
+      showNext();
+    </script>
+  </body>
+</html>

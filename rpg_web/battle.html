@@ -72,8 +72,8 @@
 
         // ユニットタイプごとに幅を変える
         if (type === "fighter") return 64;
-        if (type === "archer") return 48;
-        if (type === "healer") return 36;
+        if (type === "archer") return 32;
+        if (type === "healer") return 16;
 
         return 64;
       }
@@ -126,6 +126,10 @@
           // このカードを選択状態に
           el.classList.add("selected");
           selectedCard = card;
+
+          const spawnX = 0;
+          const spawnY = 100 + Math.random() * 300;
+          spawnUnit(spawnX, spawnY, "player", card);
         };
 
         // =========================
@@ -158,7 +162,7 @@
             maxHp: 120,
             speed: 0.6,
             range: 60,
-            attack: 1.2,
+            attack: 10,
             cooldownMax: 30,
           };
 
@@ -168,7 +172,7 @@
             maxHp: 70,
             speed: 0.5,
             range: 180,
-            attack: 0.5,
+            attack: 1,
             cooldownMax: 10,
           };
 
@@ -177,8 +181,8 @@
             hp: 60,
             maxHp: 60,
             speed: 0.5,
-            range: 140,
-            heal: 0.6,
+            range: 60,
+            heal: 5,
             cooldownMax: 20,
           };
       }
@@ -295,35 +299,6 @@
         "keyup",
         (e) => (keys[e.key.toLowerCase()] = false),
       );
-
-      // =========================
-      // 範囲円の表示制御
-      // =========================
-      field.onmouseenter = () => (rangeCircle.style.display = "block");
-      field.onmouseleave = () => (rangeCircle.style.display = "none");
-
-      // =========================
-      // フィールドクリックでユニット配置
-      // =========================
-      field.onclick = (e) => {
-        // カード未選択 or 使用不可なら終了
-        if (!selectedCard || selectedCard.cd > 0 || selectedCard.active) return;
-
-        const rect = field.getBoundingClientRect();
-
-        // クリック座標をフィールド内座標に変換
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
-        // 指揮官からの距離を計算
-        const d = Math.hypot(x - playerCommander.x, y - playerCommander.y);
-
-        // 配置可能範囲内なら生成
-        if (d < 120) {
-          spawnUnit(x, y, "player", selectedCard);
-          selectedCard = null; // 選択解除
-        }
-      };
 
       // =========================
       // 敵の自動出撃処理
