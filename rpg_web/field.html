@@ -4,23 +4,9 @@
     <meta charset="UTF-8" />
     <title>溝川201</title>
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="charge.css" />
     <style>
-      /* === 追加：カード暗転＆回復ゲージ === */
-      .card {
-        position: relative;
-        overflow: hidden;
-      }
-
-      .cardOverlay {
-        position: absolute;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        height: 0%;
-        background: rgba(0, 0, 0, 0.6);
-        pointer-events: none;
-        transition: height 0.1s linear;
+      body {
+        user-select: none;
       }
 
       #pauseOverlay {
@@ -29,12 +15,9 @@
         left: 0;
         width: 100vw;
         height: 100vh;
-
         background: rgba(0, 0, 0, 0.6);
         display: none;
-
         z-index: 9999;
-
         justify-content: center;
         align-items: center;
       }
@@ -48,16 +31,24 @@
   </head>
   <body>
     <div id="gameWrapper">
-      <div id="field">
-        <div id="rangeCircle"></div>
-      </div>
+      <div id="field"></div>
+    </div>
 
-      <div id="unitBar"></div>
-
-      <div id="infoPanel">
-        <div id="infoTitle">ユニット情報</div>
-        <div id="infoContent">カードにカーソルを合わせると表示</div>
-      </div>
+    <div
+      id="dialogueBox"
+      style="
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 120px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        display: none;
+        padding: 10px;
+      "
+    >
+      <div id="dialogueText"></div>
     </div>
 
     <div id="pauseOverlay">
@@ -67,40 +58,54 @@
       </div>
     </div>
 
-    <script src="character-data.js"></script>
-    <script src="player-movement.js"></script>
-    <script src="charge.js"></script>
-    <script src="battle-ai.js"></script>
-    <script src="aura.js"></script>
     <script>
-      // =========================
-      // DOM要素の取得
-      // =========================
-      const field = document.getElementById("field"); // ゲームフィールド全体
-      const rangeCircle = document.getElementById("rangeCircle"); // 指揮官の配置可能範囲表示
-      const unitBar = document.getElementById("unitBar"); // カードUI
+      const characterData = {
+        A: { name: "渡辺", desc: "36歳思想の強い独身ニート" },
+      };
 
-      const infoTitle = document.getElementById("infoTitle"); // ユニット名表示
-      const infoContent = document.getElementById("infoContent"); // ユニット説明表示
+      const images = {
+        player: "player.png",
+        A: "attacker.png",
+      };
+    </script>
 
-      // =========================
-      // ゲーム状態管理用変数
-      // =========================
+    <script>
+      function updatePlayerMovement(playerCommander, keys) {
+        if (keys["a"] || keys["arrowleft"])
+          playerCommander.x -= playerCommander.speed;
+        if (keys["d"] || keys["arrowright"])
+          playerCommander.x += playerCommander.speed;
+        if (keys["w"] || keys["arrowup"])
+          playerCommander.y -= playerCommander.speed;
+        if (keys["s"] || keys["arrowdown"])
+          playerCommander.y += playerCommander.speed;
+
+        playerCommander.x = Math.max(0, Math.min(860, playerCommander.x));
+        playerCommander.y = Math.max(0, Math.min(460, playerCommander.y));
+      }
+    </script>
+
+    <script>
+      const field = document.getElementById("field");
+
       let isPaused = false;
       let gameMode = "normal";
-      // "normal" = 非戦闘
-      // "battle" = 戦闘中
-      let battleStarted = false;
-      let units = []; // フィールド上の全ユニット
-      let selectedCard = null; // 現在選択中のカード
-      const keys = {}; // キー入力状態管理
 
-      const UNIT_SIZE = 64; // ユニットのサイズ（未使用だが基準値）
+      const keys = {};
+
+      window.addEventListener("keydown", (e) => {
+        keys[e.key.toLowerCase()] = true;
+      });
+
+      window.addEventListener("keyup", (e) => {
+        keys[e.key.toLowerCase()] = false;
+      });
+
+      const UNIT_SIZE = 64;
 
       function checkScreenSize() {
         const w = window.innerWidth;
         const h = window.innerHeight;
-
         const ratio = w / h;
 
         if (w < 1000 || ratio < 0.75) {
@@ -114,380 +119,181 @@
 
       function pauseGame() {
         if (isPaused) return;
-
         isPaused = true;
         pauseOverlay.style.display = "flex";
       }
 
       function resumeGame() {
         if (!isPaused) return;
-
         isPaused = false;
         pauseOverlay.style.display = "none";
       }
 
-      // =========================
-      // HPバーの幅を決める関数
-      // =========================
-      function getHpBarWidth(type, isCommander) {
-        // 指揮官は常に最大サイズ
-        if (isCommander) return 64;
-
-        // ユニットタイプごとに幅を変える
-        if (type === "fighter") return 64;
-        if (type === "archer") return 32;
-        if (type === "healer") return 16;
-
-        return 64;
-      }
-
-      // =========================
-      // プレイヤーと敵のデッキ定義
-      // =========================
-      const playerDeck = [
-        { id: "A", type: "fighter", cd: 0, active: false },
-        { id: "B", type: "archer", cd: 0, active: false },
-        { id: "C", type: "archer", cd: 0, active: false },
-        { id: "D", type: "healer", cd: 0, active: false },
-      ];
-
-      const enemyDeck = [
-        { id: "E-A", type: "fighter", cd: 0, active: false },
-        { id: "E-B", type: "fighter", cd: 0, active: false },
-      ];
-
-      // =========================
-      // プレイヤーカードUIの生成
-      // =========================
-      playerDeck.forEach((card) => {
+      function createPlayer(x, y) {
         const el = document.createElement("div");
-        el.className = "card";
 
-        // カード画像設定
-        el.style.backgroundImage = `url(${images[card.id]})`;
-        unitBar.appendChild(el);
-
-        // クールダウン用オーバーレイ（黒い覆い）
-        const overlay = document.createElement("div");
-        overlay.className = "cardOverlay";
-        el.appendChild(overlay);
-
-        // カードオブジェクトに参照を保存
-        card.overlay = overlay;
-        card.el = el;
-
-        // =========================
-        // カードクリック処理（選択）
-        // =========================
-        el.onclick = () => {
-          // クールダウン中 or すでに出撃中なら選択不可
-          if (card.cd > 0 || card.active) return;
-
-          // 他カードの選択状態を解除
-          playerDeck.forEach((c) => c.el.classList.remove("selected"));
-
-          // このカードを選択状態に
-          el.classList.add("selected");
-          selectedCard = card;
-
-          const spawnX = 0;
-          const spawnY = 100 + Math.random() * 300;
-          spawnUnit(spawnX, spawnY, "player", card);
-        };
-
-        // =========================
-        // マウスホバーで情報表示
-        // =========================
-        el.onmouseenter = () => {
-          const data = characterData[card.id];
-          if (!data) return;
-
-          infoTitle.textContent = data.name;
-          infoContent.textContent = data.desc;
-        };
-
-        // =========================
-        // マウス離脱で情報リセット
-        // =========================
-        el.onmouseleave = () => {
-          infoTitle.textContent = "ユニット情報";
-          infoContent.textContent = "カードにカーソルを合わせると表示";
-        };
-      });
-
-      // =========================
-      // ユニットの基本ステータス取得
-      // =========================
-      function getStats(type) {
-        if (type === "fighter")
-          return {
-            hp: 120,
-            maxHp: 120,
-            speed: 0.6,
-            range: 60,
-            attack: 10,
-            cooldownMax: 30,
-          };
-
-        if (type === "archer")
-          return {
-            hp: 70,
-            maxHp: 70,
-            speed: 0.5,
-            range: 180,
-            attack: 1,
-            cooldownMax: 10,
-          };
-
-        if (type === "healer")
-          return {
-            hp: 60,
-            maxHp: 60,
-            speed: 0.5,
-            range: 60,
-            heal: 5,
-            cooldownMax: 20,
-          };
-      }
-
-      // =========================
-      // ユニット生成処理
-      // =========================
-      function spawnUnit(x, y, team, card, isCommander = false) {
-        // 指揮官か通常ユニットかでステータスを分岐
-        const stats = isCommander
-          ? { hp: 500, maxHp: 500, speed: 1.5, range: 80, attack: 1 }
-          : getStats(card.type);
-
-        // ユニットDOM生成
-        const el = document.createElement("div");
-        el.className = "unit";
-
-        // 見た目設定（陣営・種類で画像変更）
-        if (isCommander) {
-          el.style.backgroundImage =
-            team === "player"
-              ? `url(${images.player})`
-              : `url(${images.enemyCommander})`;
-        } else {
-          el.style.backgroundImage =
-            team === "player"
-              ? `url(${images[card.id]})`
-              : `url(${images.enemy})`;
-        }
+        el.style.position = "absolute";
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+        el.style.width = UNIT_SIZE + "px";
+        el.style.height = UNIT_SIZE + "px";
+        el.style.backgroundImage = `url(${images.player})`;
+        el.style.backgroundSize = "contain";
+        el.style.backgroundRepeat = "no-repeat";
+        el.style.backgroundPosition = "center";
 
         field.appendChild(el);
 
-        // =========================
-        // HPバー生成
-        // =========================
-        const hpbar = document.createElement("div");
-        hpbar.className = "hpbar";
-
-        const hpfill = document.createElement("div");
-        hpfill.className = "hpfill";
-
-        hpbar.appendChild(hpfill);
-        el.appendChild(hpbar);
-
-        // =========================
-        // ユニットオブジェクト生成
-        // =========================
-        const unit = {
+        return {
+          el,
           x,
           y,
-          team,
-          ...stats,
-          type: card.type,
-          card,
-          cooldown: 0,
-          isCommander,
-          el,
-          hpbar,
-          hpfill,
-          duoMultiplier: 1,
+          speed: 4,
         };
+      }
 
-        // チャージ系初期化
-        initCharge(unit, card, stats, el);
+      const playerCommander = createPlayer(100, 100);
 
-        // 攻撃時イベント
-        unit.onAttack = function () {
-          onAttackCharge(this);
-        };
+      function createNPC(id, x, y) {
+        const npc = document.createElement("div");
 
-        // =========================
-        // カード状態更新
-        // =========================
-        if (card) {
-          card.active = true;
+        npc.style.position = "absolute";
+        npc.style.left = x + "px";
+        npc.style.top = y + "px";
+        npc.style.width = UNIT_SIZE + "px";
+        npc.style.height = UNIT_SIZE + "px";
+        npc.style.backgroundImage = `url(${images[id]})`;
+        npc.style.backgroundSize = "contain";
+        npc.style.backgroundRepeat = "no-repeat";
+        npc.style.backgroundPosition = "center";
 
-          // 出撃直後はカードを真っ黒に
-          if (card.overlay) {
-            card.overlay.style.height = "100%";
+        const talkUI = document.createElement("div");
+        talkUI.textContent = "Talk";
+        talkUI.style.position = "absolute";
+        talkUI.style.top = "-20px";
+        talkUI.style.width = "100%";
+        talkUI.style.textAlign = "center";
+        talkUI.style.color = "white";
+        talkUI.style.fontSize = "12px";
+        talkUI.style.display = "none";
+
+        npc.appendChild(talkUI);
+        field.appendChild(npc);
+
+        return { id, el: npc, x, y, talkUI };
+      }
+
+      const watanabe = createNPC("A", 300, 200);
+
+      const npcs = [watanabe];
+
+      function isNear(player, npc) {
+        const dx = player.x - npc.x;
+        const dy = player.y - npc.y;
+        return Math.sqrt(dx * dx + dy * dy) < 100;
+      }
+
+      const dialogueBox = document.getElementById("dialogueBox");
+      const dialogueText = document.getElementById("dialogueText");
+
+      const conversations = {
+        A: ["よう", "なんだお前", "話しかけてくるなよ"],
+      };
+
+      let currentConversation = [];
+      let lastTalkEndTime = 0;
+      const TALK_COOLDOWN = 1000;
+      let currentIndex = 0;
+
+      function startConversation(npc) {
+        gameMode = "conversation";
+
+        currentConversation = conversations[npc.id];
+        currentIndex = 0;
+
+        dialogueBox.style.display = "block";
+        dialogueText.textContent = `${characterData[npc.id].name}「${currentConversation[0]}」`;
+      }
+
+      window.addEventListener("resize", checkScreenSize);
+
+      window.addEventListener("click", (e) => {
+        const rect = field.getBoundingClientRect();
+
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
+
+        // 会話中 → 会話送り
+        if (gameMode === "conversation") {
+          currentIndex++;
+
+          if (currentIndex >= currentConversation.length) {
+            dialogueBox.style.display = "none";
+            gameMode = "normal";
+
+            lastTalkEndTime = Date.now(); // ←追加
+
+            return;
+          }
+
+          dialogueText.textContent = `${characterData[watanabe.id].name}「${currentConversation[currentIndex]}」`;
+          return;
+        } else {
+          // ▼ 手前のNPC優先でソート
+          const sortedNPCs = [...npcs].sort(
+            (a, b) => b.y + UNIT_SIZE - (a.y + UNIT_SIZE),
+          );
+
+          // ▼ NPCクリック判定
+          for (const npc of sortedNPCs) {
+            const withinX = clickX >= npc.x && clickX <= npc.x + UNIT_SIZE;
+            const withinY = clickY >= npc.y && clickY <= npc.y + UNIT_SIZE;
+
+            if (
+              withinX &&
+              withinY &&
+              isNear(playerCommander, npc) &&
+              Date.now() - lastTalkEndTime > TALK_COOLDOWN
+            ) {
+              startConversation(npc);
+              return;
+            }
           }
         }
-
-        units.push(unit);
-        return unit;
-      }
-
-      // =========================
-      // フィールドクリックでバフ発動
-      // =========================
-      field.addEventListener("click", (e) => {
-        activateChargeBuff(units, e);
       });
 
-      // =========================
-      // 指揮官の初期配置
-      // =========================
-      const playerCommander = spawnUnit(
-        100,
-        250,
-        "player",
-        { type: "fighter" },
-        true,
-      );
-
-      function startBattle() {
-        if (battleStarted) return;
-
-        gameMode = "battle";
-        battleStarted = true;
-
-        // 敵司令官出現
-        spawnUnit(850, 250, "enemy", { type: "fighter" }, true);
-
-        // 敵ユニット初期召喚（任意）
-        enemyDeck.forEach((card) => {
-          spawnUnit(800, Math.random() * 460, "enemy", card);
-          card.cd = 180;
-        });
-      }
-
-      // =========================
-      // キー入力管理
-      // =========================
-      window.addEventListener(
-        "keydown",
-        (e) => (keys[e.key.toLowerCase()] = true),
-      );
-      window.addEventListener(
-        "keyup",
-        (e) => (keys[e.key.toLowerCase()] = false),
-      );
-
-      // =========================
-      // 敵の自動出撃処理
-      // =========================
-      setInterval(() => {
-        if (gameMode !== "battle") return;
-
-        enemyDeck.forEach((card) => {
-          if (card.cd <= 0 && !card.active) {
-            spawnUnit(800, Math.random() * 460, "enemy", card);
-            card.cd = 180;
-          }
-        });
-      }, 2000);
-
-      // =========================
-      // メインループ
-      // =========================
       function update() {
         checkScreenSize();
-        window.addEventListener("resize", checkScreenSize);
 
         if (isPaused) {
           requestAnimationFrame(update);
           return;
         }
 
-        // プレイヤー移動
-        updatePlayerMovement(playerCommander, keys);
-
-        // 範囲円の位置更新
-        rangeCircle.style.left = playerCommander.x - 120 + "px";
-        rangeCircle.style.top = playerCommander.y - 120 + "px";
-
-        // =========================
-        // カードのクールダウン更新
-        // =========================
-        [...playerDeck, ...enemyDeck].forEach((c) => {
-          if (c.cd > 0) c.cd--;
-
-          if (c.el && c.overlay) {
-            if (c.active) {
-              // 生存中は常に真っ黒
-              c.overlay.style.height = "100%";
-            } else if (c.cd > 0) {
-              // 死亡後CD
-              const ratio = c.cd / 180;
-              c.overlay.style.height = ratio * 100 + "%";
-            } else {
-              c.overlay.style.height = "0%";
-            }
-          }
-        });
-
-        // AI処理
-        // AI処理
-        if (gameMode === "battle") {
-          updateBattleAI(units);
+        // 移動はnormal時だけ
+        if (gameMode === "normal") {
+          updatePlayerMovement(playerCommander, keys);
         }
 
-        // オーラ効果更新
-        updateAura(units);
+        playerCommander.el.style.left = playerCommander.x + "px";
+        playerCommander.el.style.top = playerCommander.y + "px";
 
-        // =========================
-        // 各ユニット更新
-        // =========================
-        units.forEach((u) => {
-          updateCharge(u); // チャージ更新
+        playerCommander.el.style.zIndex = Math.floor(
+          playerCommander.y + UNIT_SIZE,
+        );
 
-          // 位置反映
-          u.el.style.left = u.x + "px";
-          u.el.style.top = u.y + "px";
+        watanabe.el.style.zIndex = Math.floor(watanabe.y + UNIT_SIZE);
 
-          // HP割合計算
-          const ratio = u.hp / u.maxHp;
+        // Talk表示
+        if (isNear(playerCommander, watanabe) && gameMode === "normal") {
+          watanabe.talkUI.style.display = "block";
+        } else {
+          watanabe.talkUI.style.display = "none";
+        }
 
-          // HPバー更新
-          const barWidth = getHpBarWidth(u.type, u.isCommander);
-          u.hpbar.style.width = barWidth + "px";
-          u.hpfill.style.width = barWidth * ratio + "px";
-        });
-
-        // =========================
-        // 死亡処理
-        // =========================
-        units = units.filter((u) => {
-          if (u.hp <= 0) {
-            // 指揮官死亡 → 勝敗判定
-            if (u.isCommander) {
-              alert(u.team === "player" ? "敗北" : "勝利");
-              location.reload();
-            }
-
-            // カード再使用可能に
-            if (u.card) {
-              u.card.active = false;
-              u.card.cd = 180;
-            }
-
-            // DOM削除
-            u.el.remove();
-            return false;
-          }
-          return true;
-        });
-
-        // 次フレームへ
         requestAnimationFrame(update);
       }
 
-      // ループ開始
       update();
     </script>
   </body>
