@@ -22,6 +22,33 @@
         align-items: center;
       }
 
+      .card {
+        width: 30%;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px;
+        border: 1px solid #888;
+        background: rgba(0, 0, 0, 0.05);
+      }
+
+      #info {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 10px;
+        border: 1px solid #888;
+        background: rgba(0, 0, 0, 0.05);
+      }
+
+      #info > img {
+        flex-shrink: 0;
+      }
+
+      #info #status {
+        flex: 1;
+      }
+
       #pauseText {
         color: white;
         font-size: 24px;
@@ -31,25 +58,25 @@
   </head>
   <body>
     <div id="gameWrapper">
+      <div>コーポ・溝川 前</div>
       <div id="field"></div>
-    </div>
 
-    <div
-      id="dialogueBox"
-      style="
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        height: 120px;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        display: none;
-        padding: 10px;
-      "
-    >
-      <div id="dialogueText"></div>
-    </div>
+      <div id="info">
+        <img src="player.png" alt="Player" style="width: 64px; height: 64px" />
+        <div id="status">
+          <div>矢野良一（21）　Lv.1</div>
+          <div>
+            冴えないフリーター。 <br />
+            HP: 100/100<br />
+            MP: 20/20<br />
+            ATK: 10
+          </div>
+        </div>
+      </div>
+      
+      <!-- <div class="card">
+        <img src="player.png" alt="Player" style="width: 64px; height: 64px" />
+    </div> -->
 
     <div id="pauseOverlay">
       <div id="pauseText">
@@ -60,12 +87,17 @@
 
     <script>
       const characterData = {
-        A: { name: "渡辺", desc: "36歳思想の強い独身ニート" },
+        A: {
+          name: "渡辺",
+          desc: "36歳思想の強い独身ニート",
+          image: "attacker.png"
+        }
       };
 
       const images = {
         player: "player.png",
         A: "attacker.png",
+        people: "people.png",
       };
     </script>
 
@@ -183,9 +215,50 @@
         return { id, el: npc, x, y, talkUI };
       }
 
+      function createWanderNPC(x, y) {
+        const npc = document.createElement("div");
+
+        npc.style.position = "absolute";
+        npc.style.left = x + "px";
+        npc.style.top = y + "px";
+        npc.style.width = UNIT_SIZE + "px";
+        npc.style.height = UNIT_SIZE + "px";
+        npc.style.backgroundImage = `url(${images.people})`;
+        npc.style.backgroundSize = "contain";
+        npc.style.backgroundRepeat = "no-repeat";
+        npc.style.backgroundPosition = "center";
+
+        field.appendChild(npc);
+
+        return {
+          el: npc,
+          x,
+          y,
+
+          // 移動用パラメータ
+          vx: (Math.random() - 0.5) * 2,
+          vy: (Math.random() - 0.5) * 2,
+          speed: 1,
+
+          // 行動範囲
+          originX: x,
+          originY: y,
+          range: 50 + Math.random() * 100,
+
+          changeTimer: 0,
+        };
+      }
+
       const watanabe = createNPC("A", 300, 200);
 
       const npcs = [watanabe];
+
+      const wanderNPCs = [];
+
+      for (let i = 0; i < 5; i++) {
+        const npc = createWanderNPC(Math.random() * 800, Math.random() * 400);
+        wanderNPCs.push(npc);
+      }
 
       function isNear(player, npc) {
         const dx = player.x - npc.x;
@@ -193,8 +266,8 @@
         return Math.sqrt(dx * dx + dy * dy) < 100;
       }
 
-      const dialogueBox = document.getElementById("dialogueBox");
-      const dialogueText = document.getElementById("dialogueText");
+      const status = document.getElementById("status");
+      const infoImg = document.querySelector("#info img");
 
       const conversations = {
         A: ["よう", "なんだお前", "話しかけてくるなよ"],
@@ -211,8 +284,17 @@
         currentConversation = conversations[npc.id];
         currentIndex = 0;
 
-        dialogueBox.style.display = "block";
-        dialogueText.textContent = `${characterData[npc.id].name}「${currentConversation[0]}」`;
+        // ↓ここ変更
+        status.innerHTML =
+          `${characterData[npc.id].name}「${currentConversation[0]}」`;
+
+          // 画像切り替え
+          if (characterData[npc.id].image) {
+            infoImg.src = characterData[npc.id].image;
+            infoImg.style.display = "block";
+          } else {
+            infoImg.style.display = "none";
+          }
       }
 
       window.addEventListener("resize", checkScreenSize);
@@ -226,18 +308,35 @@
         // 会話中 → 会話送り
         if (gameMode === "conversation") {
           currentIndex++;
+          
 
           if (currentIndex >= currentConversation.length) {
-            dialogueBox.style.display = "none";
             gameMode = "normal";
 
-            lastTalkEndTime = Date.now(); // ←追加
+            lastTalkEndTime = Date.now();
+
+            // ↓これ追加（元の表示に戻す）
+            status.innerHTML = `
+              <div>矢野良一（21）　Lv.1</div>
+              <div>
+                冴えないフリーター。 <br />
+                HP: 100/100<br />
+                MP: 20/20<br />
+                ATK: 10
+              </div>
+            `;
+
+            // プレイヤー画像に戻す
+infoImg.src = "player.png";
+infoImg.style.display = "block";
 
             return;
           }
 
-          dialogueText.textContent = `${characterData[watanabe.id].name}「${currentConversation[currentIndex]}」`;
-          return;
+          status.innerHTML =
+            `${characterData[watanabe.id].name}「${currentConversation[currentIndex]}」`;
+            
+            return;
         } else {
           // ▼ 手前のNPC優先でソート
           const sortedNPCs = [...npcs].sort(
@@ -262,6 +361,38 @@
         }
       });
 
+      function updateWanderNPC(npc) {
+        npc.changeTimer--;
+
+        // 一定時間ごとに方向変える
+        if (npc.changeTimer <= 0) {
+          npc.vx = (Math.random() - 0.5) * 2;
+          npc.vy = (Math.random() - 0.5) * 2;
+          npc.changeTimer = 60 + Math.random() * 120;
+        }
+
+        // 移動
+        npc.x += npc.vx * npc.speed;
+        npc.y += npc.vy * npc.speed;
+
+        // 行動範囲制限（円っぽく戻す）
+        const dx = npc.x - npc.originX;
+        const dy = npc.y - npc.originY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > npc.range) {
+          npc.vx *= -1;
+          npc.vy *= -1;
+        }
+
+        // DOM反映
+        npc.el.style.left = npc.x + "px";
+        npc.el.style.top = npc.y + "px";
+
+        // 描画順（超重要）
+        npc.el.style.zIndex = Math.floor(npc.y + UNIT_SIZE);
+      }
+
       function update() {
         checkScreenSize();
 
@@ -281,6 +412,11 @@
         playerCommander.el.style.zIndex = Math.floor(
           playerCommander.y + UNIT_SIZE,
         );
+
+        // 一般人NPC更新
+        for (const npc of wanderNPCs) {
+          updateWanderNPC(npc);
+        }
 
         watanabe.el.style.zIndex = Math.floor(watanabe.y + UNIT_SIZE);
 
